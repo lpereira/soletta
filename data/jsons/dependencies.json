@@ -461,7 +461,19 @@
       "dependency": "libmicrohttpd",
       "type": "pkg-config",
       "pkgname": "libmicrohttpd",
-      "atleast-version": "0.9.43"
+      "atleast-version": "0.9.43",
+      "pkgname": "libmicrohttpd"
+    },
+    {
+      "dependency": "tinycbor_src",
+      "type": "filesystem",
+      "files": [
+        "cbor.h"
+      ],
+      "path": {
+        "in-tree": "{TOP_SRCDIR}/src/thirdparty/tinycbor/src",
+        "out-of-tree": "{TINYCBOR_SRC}"
+      }
     }
   ]
 }
