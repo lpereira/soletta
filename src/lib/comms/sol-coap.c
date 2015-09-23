@@ -1495,3 +1495,28 @@ sol_coap_server_register_resource(struct sol_coap_server *server,
 
     return true;
 }
+
+SOL_API int
+sol_coap_server_unregister_resource(struct sol_coap_server *server,
+    const struct sol_coap_resource *resource, void *data)
+{
+    struct resource_context *c;
+    uint16_t idx;
+
+    SOL_NULL_CHECK(server, -EINVAL);
+    SOL_NULL_CHECK(resource, -EINVAL);
+
+    COAP_RESOURCE_CHECK_API(-EINVAL);
+
+    SOL_VECTOR_FOREACH_REVERSE_IDX (&server->contexts, c, idx) {
+        if (c->resource != resource || c->data != data)
+            continue;
+
+        destroy_context(c);
+        sol_vector_del(&server->contexts, idx);
+
+        return 0;
+    }
+
+    return -ENOENT;
+}
