@@ -1027,7 +1027,7 @@ struct client_resource {
     struct sol_timeout *find_timeout;
     struct sol_timeout *update_schedule_timeout;
 
-    struct sol_oic_client client;
+    struct sol_oic_client *client;
 
     const char *rt;
     char *device_id;
@@ -1176,11 +1176,11 @@ send_discovery_packets(struct client_resource *resource)
 
     sol_flow_send_boolean_packet(resource->node, resource->funcs->found_port, false);
 
-    sol_oic_client_find_resource(&resource->client, &multicast_ipv4, resource->rt,
+    sol_oic_client_find_resource(resource->client, &multicast_ipv4, resource->rt,
         found_resource, resource);
-    sol_oic_client_find_resource(&resource->client, &multicast_ipv6_local, resource->rt,
+    sol_oic_client_find_resource(resource->client, &multicast_ipv6_local, resource->rt,
         found_resource, resource);
-    sol_oic_client_find_resource(&resource->client, &multicast_ipv6_site, resource->rt,
+    sol_oic_client_find_resource(resource->client, &multicast_ipv6_site, resource->rt,
         found_resource, resource);
 }
 
@@ -1278,11 +1278,11 @@ static void
 send_scan_packets(struct client_resource *resource)
 {
     clear_scanned_ids(&resource->scanned_ids);
-    sol_oic_client_find_resource(&resource->client, &multicast_ipv4,
+    sol_oic_client_find_resource(resource->client, &multicast_ipv4,
          resource->rt, scan_callback, resource);
-    sol_oic_client_find_resource(&resource->client, &multicast_ipv6_local,
+    sol_oic_client_find_resource(resource->client, &multicast_ipv6_local,
          resource->rt, scan_callback, resource);
-    sol_oic_client_find_resource(&resource->client, &multicast_ipv6_site,
+    sol_oic_client_find_resource(resource->client, &multicast_ipv6_site,
          resource->rt, scan_callback, resource);
 }
 
@@ -1437,7 +1437,7 @@ client_connect(struct client_resource *resource, const char *device_id)
         sol_timeout_del(resource->find_timeout);
 
     if (resource->resource) {
-        if (!sol_oic_client_resource_set_observable(&resource->client,
+        if (!sol_oic_client_resource_set_observable(resource->client,
             resource->resource, NULL, NULL, false)) {
             SOL_WRN("Could not unobserve resource");
         }
@@ -1474,15 +1474,8 @@ client_resource_init(struct sol_flow_node *node, struct client_resource *resourc
 
     assert(resource_type);
 
-    SOL_SET_API_VERSION(resource->client.api_version = SOL_OIC_CLIENT_API_VERSION; )
-    resource->client.server = sol_coap_server_new(0);
-    SOL_NULL_CHECK(resource->client.server, -ENOMEM);
-
-    resource->client.dtls_server = sol_coap_secure_server_new(0);
-    if (!resource->client.dtls_server) {
-        SOL_INT_CHECK_GOTO(errno, != ENOSYS, nomem);
-        SOL_INF("DTLS support not built-in, only making non-secure requests");
-    }
+    resource->client = sol_oic_client_new();
+    SOL_NULL_CHECK(resource->client, -ENOMEM);
 
     sol_ptr_vector_init(&resource->scanned_ids);
     resource->node = node;
@@ -1494,10 +1487,6 @@ client_resource_init(struct sol_flow_node *node, struct client_resource *resourc
     resource->rt = resource_type;
 
     return 0;
-
-nomem:
-    sol_coap_server_unref(resource->client.server);
-    return -ENOMEM;
 }
 
 static void
@@ -1511,7 +1500,7 @@ client_resource_close(struct client_resource *resource)
         sol_timeout_del(resource->update_schedule_timeout);
 
     if (resource->resource) {
-        bool r = sol_oic_client_resource_set_observable(&resource->client, resource->resource,
+        bool r = sol_oic_client_resource_set_observable(resource->client, resource->resource,
             NULL, NULL, false);
         if (!r)
             SOL_WRN("Could not unobserve resource");
@@ -1520,9 +1509,7 @@ client_resource_close(struct client_resource *resource)
     }
 
     clear_scanned_ids(&resource->scanned_ids);
-    sol_coap_server_unref(resource->client.server);
-    if (resource->client.dtls_server)
-        sol_coap_server_unref(resource->client.dtls_server);
+    sol_oic_client_del(resource->client);
 }
 
 static bool
@@ -1537,7 +1524,7 @@ client_resource_perform_update(void *data)
     if (!resource->funcs->to_repr_vec(resource, &repr)) {
         SOL_WRN("Error while serializing update message");
     } else {
-        int r = sol_oic_client_resource_request(&resource->client, resource->resource,
+        int r = sol_oic_client_resource_request(resource->client, resource->resource,
             SOL_COAP_METHOD_PUT, &repr, NULL, NULL);
         if (r < 0) {
             SOL_WRN("Could not send update request to resource, will try again");

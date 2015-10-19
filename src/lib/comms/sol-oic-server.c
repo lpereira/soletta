@@ -50,14 +50,16 @@
 #include "sol-oic-cbor.h"
 #include "sol-oic-common.h"
 #include "sol-oic-server.h"
+#include "sol-oic-security.h"
 
 SOL_LOG_INTERNAL_DECLARE(_sol_oic_server_log_domain, "oic-server");
 
 struct sol_oic_server {
     struct sol_coap_server *server;
     struct sol_coap_server *dtls_server;
-    struct sol_vector resources;
+    struct sol_oic_security *security;
     struct sol_oic_server_information *information;
+    struct sol_vector resources;
     int refcnt;
 };
 
@@ -68,6 +70,7 @@ struct sol_oic_server_resource {
     char *rt;
     char *iface;
     enum sol_oic_resource_flag flags;
+    enum sol_oic_payload_type payload_type;
 
     struct {
         struct {
@@ -337,7 +340,7 @@ _sol_oic_server_res(struct sol_coap_server *server,
     if (err != CborNoError) {
         char addr[SOL_INET_ADDR_STRLEN];
         sol_network_addr_to_str(cliaddr, addr, sizeof(addr));
-        SOL_WRN("Error building response for /oc/core, server %p client %s: %s",
+        SOL_WRN("Error building response for /oic/res, server %p client %s: %s",
             oic_server.server, addr, cbor_error_string(err));
 
         sol_coap_header_set_code(resp, SOL_COAP_RSPCODE_INTERNAL_ERROR);
@@ -409,6 +412,9 @@ sol_oic_server_init(void)
         goto error;
     }
 
+    oic_server.information = info;
+    sol_vector_init(&oic_server.resources, sizeof(struct sol_oic_server_resource));
+
     oic_server.dtls_server = sol_coap_secure_server_new(OIC_COAP_SERVER_DTLS_PORT);
     if (!oic_server.dtls_server) {
         if (errno == ENOSYS) {
@@ -423,10 +429,13 @@ sol_oic_server_init(void)
             sol_coap_server_unref(oic_server.dtls_server);
             oic_server.dtls_server = NULL;
         }
-    }
 
-    oic_server.information = info;
-    sol_vector_init(&oic_server.resources, sizeof(struct sol_oic_server_resource));
+        oic_server.security = sol_oic_server_security_add(oic_server.server, oic_server.dtls_server);
+        if (!oic_server.security) {
+            /* FIXME: Abort server here? */
+            SOL_CRI("OIC server security subsystem could not be initialized");
+        }
+    }
 
     oic_server.refcnt++;
     return 0;
@@ -464,6 +473,11 @@ sol_oic_server_release(void)
     sol_coap_server_unref(oic_server.server);
 
     free(oic_server.information);
+
+    if (oic_server.security)
+        sol_oic_server_security_del(oic_server.security);
+
+    sol_util_secure_clear_memory(&oic_server, sizeof(oic_server));
 }
 
 static void
@@ -524,7 +538,7 @@ _sol_oic_resource_type_handle(
     if (code == SOL_COAP_RSPCODE_CONTENT) {
         sol_coap_add_option(response, SOL_COAP_OPTION_CONTENT_FORMAT, &format_cbor, sizeof(format_cbor));
 
-        if (sol_oic_encode_cbor_repr(response, res->href, &output) != CborNoError)
+        if (sol_oic_encode_cbor_repr(response, res->href, &output, res->payload_type) != CborNoError)
             code = SOL_COAP_RSPCODE_INTERNAL_ERROR;
     }
 
@@ -613,20 +627,10 @@ create_coap_resource(struct sol_oic_server_resource *resource)
     return res;
 }
 
-static char *
-create_endpoint(void)
-{
-    static unsigned int id = 0;
-    char *buffer = NULL;
-    int r;
-
-    r = asprintf(&buffer, "/sol/%x", id++);
-    return r < 0 ? NULL : buffer;
-}
-
 SOL_API struct sol_oic_server_resource *
-sol_oic_server_add_resource(const struct sol_oic_resource_type *rt,
-    const void *handler_data, enum sol_oic_resource_flag flags)
+sol_oic_server_add_resource_full(const struct sol_oic_resource_type *rt,
+    const void *handler_data, enum sol_oic_resource_flag flags,
+    enum sol_oic_payload_type payload_type, const char *endpoint)
 {
     struct sol_oic_server_resource *res;
 
@@ -651,6 +655,7 @@ sol_oic_server_add_resource(const struct sol_oic_resource_type *rt,
     res->callback.post.handle = rt->post.handle;
     res->callback.delete.handle = rt->delete.handle;
     res->flags = flags;
+    res->payload_type = payload_type;
 
     res->rt = strndup(rt->resource_type.data, rt->resource_type.len);
     SOL_NULL_CHECK_GOTO(res->rt, remove_res);
@@ -658,7 +663,7 @@ sol_oic_server_add_resource(const struct sol_oic_resource_type *rt,
     res->iface = strndup(rt->interface.data, rt->interface.len);
     SOL_NULL_CHECK_GOTO(res->iface, free_rt);
 
-    res->href = create_endpoint();
+    res->href = strdup(endpoint);
     SOL_NULL_CHECK_GOTO(res->href, free_iface);
 
     res->coap = create_coap_resource(res);
@@ -688,6 +693,22 @@ remove_res:
     sol_vector_del_last(&oic_server.resources);
 
     return NULL;
+}
+
+SOL_API struct sol_oic_server_resource *
+sol_oic_server_add_resource(const struct sol_oic_resource_type *rt,
+    const void *handler_data, enum sol_oic_resource_flag flags)
+{
+    static unsigned int id = 0;
+    char buffer[128];
+    int r;
+
+    r = snprintf(buffer, sizeof(buffer), "/sol/%x", id++);
+    if (r < 0 || r >= (int)sizeof(buffer))
+        return NULL;
+
+    return sol_oic_server_add_resource_full(rt, handler_data, flags,
+        SOL_OIC_PAYLOAD_REPRESENTATION, buffer);
 }
 
 SOL_API void
@@ -730,7 +751,7 @@ send_notification_to_server(struct sol_oic_server_resource *resource,
 
     sol_coap_add_option(pkt, SOL_COAP_OPTION_CONTENT_FORMAT, &format_cbor, sizeof(format_cbor));
 
-    if (sol_oic_encode_cbor_repr(pkt, resource->href, fields) != CborNoError) {
+    if (sol_oic_encode_cbor_repr(pkt, resource->href, fields, resource->payload_type) != CborNoError) {
         sol_coap_header_set_code(pkt, SOL_COAP_RSPCODE_INTERNAL_ERROR);
     } else {
         sol_coap_header_set_code(pkt, SOL_COAP_RSPCODE_OK);

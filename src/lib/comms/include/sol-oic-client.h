@@ -67,15 +67,8 @@ extern "C" {
  * @{
  */
 
-struct sol_oic_client {
-#ifndef SOL_NO_API_VERSION
+struct sol_oic_client;
 #define SOL_OIC_CLIENT_API_VERSION (1)
-    uint16_t api_version;
-    int : 0; /* save possible hole for a future field */
-#endif
-    struct sol_coap_server *server;
-    struct sol_coap_server *dtls_server;
-};
 
 struct sol_oic_resource {
 #ifndef SOL_NO_API_VERSION
@@ -97,7 +90,11 @@ struct sol_oic_resource {
     bool active : 1;
     bool slow : 1;
     bool secure : 1;
+    bool paired : 1;
 };
+
+struct sol_oic_client *sol_oic_client_new(void);
+void sol_oic_client_del(struct sol_oic_client *client);
 
 bool sol_oic_client_find_resource(struct sol_oic_client *client,
     struct sol_network_link_addr *cliaddr, const char *resource_type,
@@ -125,6 +122,11 @@ bool sol_oic_client_resource_set_observable(struct sol_oic_client *client, struc
 
 struct sol_oic_resource *sol_oic_resource_ref(struct sol_oic_resource *r);
 void sol_oic_resource_unref(struct sol_oic_resource *r);
+
+bool sol_oic_client_pair_resource(struct sol_oic_client *client,
+    struct sol_oic_resource *resource, const struct sol_oic_pairing_method *pm,
+    bool (*paired_cb)(struct sol_oic_client *cli, struct sol_oic_resource *res, int errcode, void *data),
+    void *data);
 
 /**
  * @}

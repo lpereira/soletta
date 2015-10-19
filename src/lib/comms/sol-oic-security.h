@@ -32,40 +32,31 @@
 
 #pragma once
 
-#include "cbor.h"
 #include "sol-coap.h"
+#include "sol-oic-client.h"
 #include "sol-oic-common.h"
-#include "sol-vector.h"
+#include "sol-str-slice.h"
 
-CborError
-sol_oic_encode_cbor_repr(struct sol_coap_packet *pkt,
-    const char *href, const struct sol_vector *repr_vec,
-    enum sol_oic_payload_type payload_type);
+struct sol_oic_security;
 
-CborError sol_oic_decode_cbor_repr(struct sol_coap_packet *pkt,
-  struct sol_vector *reprs);
-CborError sol_oic_decode_cbor_repr_map(CborValue *map,
-  struct sol_vector *reprs);
+enum sol_oic_security_pair_result {
+    SOL_OIC_PAIR_SUCCESS,
+    SOL_OIC_PAIR_ERROR_ALREADY_OWNED,
+    SOL_OIC_PAIR_ERROR_PAIR_FAILURE
+};
 
-bool sol_oic_pkt_has_cbor_content(const struct sol_coap_packet *pkt);
+struct sol_oic_security *sol_oic_server_security_add(
+    struct sol_coap_server *server, struct sol_coap_server *server_dtls);
+void sol_oic_server_security_del(struct sol_oic_security *security);
 
-#define SOL_OIC_KEY_REPRESENTATION "rep"
-#define SOL_OIC_KEY_HREF "href"
-#define SOL_OIC_KEY_PLATFORM_ID "pi"
-#define SOL_OIC_KEY_MANUF_NAME "mnmn"
-#define SOL_OIC_KEY_MANUF_URL "mnml"
-#define SOL_OIC_KEY_MODEL_NUM "mnmo"
-#define SOL_OIC_KEY_MANUF_DATE "mndt"
-#define SOL_OIC_KEY_PLATFORM_VER "mnpv"
-#define SOL_OIC_KEY_OS_VER "mnos"
-#define SOL_OIC_KEY_HW_VER "mnhw"
-#define SOL_OIC_KEY_FIRMWARE_VER "mnfv"
-#define SOL_OIC_KEY_SUPPORT_URL "mnsl"
-#define SOL_OIC_KEY_SYSTEM_TIME "st"
-#define SOL_OIC_KEY_DEVICE_ID "sid"
-#define SOL_OIC_KEY_PROPERTIES "prop"
-#define SOL_OIC_KEY_RESOURCE_TYPES "rt"
-#define SOL_OIC_KEY_INTERFACES "if"
-#define SOL_OIC_KEY_POLICY "p"
-#define SOL_OIC_KEY_BITMAP "bm"
+struct sol_oic_security *sol_oic_client_security_add(
+    struct sol_coap_server *server, struct sol_coap_server *server_dtls);
+void sol_oic_client_security_del(struct sol_oic_security *security);
 
+bool sol_oic_security_get_is_paired(const struct sol_oic_security *security,
+    struct sol_str_slice device_id);
+int sol_oic_security_pair_request(struct sol_oic_security *security,
+    struct sol_oic_resource *resource,
+    void (*paired_cb)(void *data, enum sol_oic_security_pair_result result), void *data);
+
+bool sol_oic_set_token_and_mid(struct sol_coap_packet *pkt, int64_t *token);

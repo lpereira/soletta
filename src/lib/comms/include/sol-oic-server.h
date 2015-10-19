@@ -101,6 +101,10 @@ void sol_oic_server_release(void);
 struct sol_oic_server_resource *sol_oic_server_add_resource(
     const struct sol_oic_resource_type *rt, const void *handler_data,
     enum sol_oic_resource_flag flags);
+struct sol_oic_server_resource *sol_oic_server_add_resource_full(
+    const struct sol_oic_resource_type *rt, const void *handler_data,
+    enum sol_oic_resource_flag flags, enum sol_oic_payload_type type,
+    const char *path);
 void sol_oic_server_del_resource(struct sol_oic_server_resource *resource);
 
 bool sol_oic_notify_observers(struct sol_oic_server_resource *resource,

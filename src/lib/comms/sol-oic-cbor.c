@@ -33,27 +33,15 @@
 #include "sol-log.h"
 #include "sol-oic-cbor.h"
 #include "sol-oic-common.h"
+#include "sol-util.h"
 
-CborError
-sol_oic_encode_cbor_repr(struct sol_coap_packet *pkt,
-    const char *href, const struct sol_vector *repr_vec)
+static CborError
+encode_cbor_repr(CborEncoder *encoder, const char *href, const struct sol_vector *repr_vec)
 {
-    CborEncoder encoder, rep_map, array, map;
+    CborEncoder rep_map, array, map;
     CborError err;
-    uint8_t *payload;
-    uint16_t size;
 
-    if (!repr_vec)
-        return CborNoError;
-
-    if (sol_coap_packet_get_payload(pkt, &payload, &size) < 0) {
-        SOL_WRN("Could not get CoAP payload");
-        return CborUnknownError;
-    }
-
-    cbor_encoder_init(&encoder, payload, size, 0);
-
-    err = cbor_encoder_create_array(&encoder, &array, CborIndefiniteLength);
+    err = cbor_encoder_create_array(encoder, &array, CborIndefiniteLength);
     err |= cbor_encode_uint(&array, SOL_OIC_PAYLOAD_REPRESENTATION);
 
     err |= cbor_encoder_create_map(&array, &map, CborIndefiniteLength);
@@ -120,7 +108,73 @@ sol_oic_encode_cbor_repr(struct sol_coap_packet *pkt,
 
     err |= cbor_encoder_close_container(&array, &map);
 
-    err |= cbor_encoder_close_container(&encoder, &array);
+    err |= cbor_encoder_close_container(encoder, &array);
+
+    return err;
+}
+
+static CborError
+encode_cbor_sec(CborEncoder *encoder, const char *href, const struct sol_vector *repr_vec)
+{
+    CborEncoder array, map;
+    CborError err;
+    struct sol_oic_repr_field *repr;
+    uint16_t idx;
+
+    err = cbor_encoder_create_array(encoder, &array, CborIndefiniteLength);
+    err |= cbor_encode_uint(&array, SOL_OIC_PAYLOAD_SECURITY);
+
+    err |= cbor_encoder_create_map(&array, &map, CborIndefiniteLength);
+
+    SOL_VECTOR_FOREACH_IDX (repr_vec, repr, idx) {
+        const char *p;
+
+        if (!streq(repr->key, SOL_OIC_KEY_REPRESENTATION))
+            continue;
+
+        err |= cbor_encode_text_stringz(&map, SOL_OIC_KEY_REPRESENTATION);
+
+        p = repr->v_slice.data ? repr->v_slice.data : "";
+        err |= cbor_encode_text_string(&map, p, repr->v_slice.len);
+
+        break;
+    }
+
+    err |= cbor_encoder_close_container(&array, &map);
+
+    err |= cbor_encoder_close_container(encoder, &array);
+
+    return err;
+}
+
+CborError
+sol_oic_encode_cbor_repr(struct sol_coap_packet *pkt,
+    const char *href, const struct sol_vector *repr_vec,
+    enum sol_oic_payload_type payload_type)
+{
+    CborEncoder encoder;
+    CborError err;
+    uint8_t *payload;
+    uint16_t size;
+
+    if (!repr_vec)
+        return CborNoError;
+
+    if (sol_coap_packet_get_payload(pkt, &payload, &size) < 0) {
+        SOL_WRN("Could not get CoAP payload");
+        return CborUnknownError;
+    }
+
+    cbor_encoder_init(&encoder, payload, size, 0);
+
+    if (payload_type == SOL_OIC_PAYLOAD_REPRESENTATION) {
+        err = encode_cbor_repr(&encoder, href, repr_vec);
+    } else if (payload_type == SOL_OIC_PAYLOAD_SECURITY) {
+        err = encode_cbor_sec(&encoder, href, repr_vec);
+    } else {
+        SOL_WRN("Unknown payload type while encoding CBOR response");
+        return CborErrorIllegalType;
+    }
 
     if (err == CborNoError)
         sol_coap_packet_set_payload_used(pkt, encoder.ptr - payload);

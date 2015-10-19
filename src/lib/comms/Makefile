@@ -5,19 +5,20 @@ obj-networking-$(NETWORK) := \
     sol-socket.o
 
 obj-networking-$(DTLS) += \
+    sol-socket-dtls-impl-tinydtls.o \
+    $(TINYDTLS_SRC_PATH)/aes/rijndael.o \
     $(TINYDTLS_SRC_PATH)/ccm.o \
     $(TINYDTLS_SRC_PATH)/crypto.o \
     $(TINYDTLS_SRC_PATH)/dtls.o \
     $(TINYDTLS_SRC_PATH)/dtls_time.o \
+    $(TINYDTLS_SRC_PATH)/ecc/ecc.o \
     $(TINYDTLS_SRC_PATH)/hmac.o \
     $(TINYDTLS_SRC_PATH)/netq.o \
     $(TINYDTLS_SRC_PATH)/peer.o \
     $(TINYDTLS_SRC_PATH)/session.o \
-    $(TINYDTLS_SRC_PATH)/ecc/ecc.o \
-    $(TINYDTLS_SRC_PATH)/aes/rijndael.o \
-    $(TINYDTLS_SRC_PATH)/sha2/sha2.o \
-    sol-socket-dtls-impl-tinydtls.o
+    $(TINYDTLS_SRC_PATH)/sha2/sha2.o
 
+# For a security library, TinyDTLS has some really scary warnings.
 obj-networking-$(DTLS)-extra-cflags += \
     -I$(TINYDTLS_SRC_PATH) \
     -Wno-sign-compare \
@@ -27,7 +28,11 @@ obj-networking-$(DTLS)-extra-cflags += \
     -Wno-strict-prototypes \
     -Wno-shadow \
     -Wno-missing-prototypes \
-    -Wno-incompatible-pointer-types
+    -Wno-incompatible-pointer-types \
+    -Wno-nested-externs \
+    -Wno-implicit-int \
+    -Wno-endif-labels \
+    -Wno-missing-declarations
 
 obj-networking-$(PLATFORM_RIOTOS) += \
     sol-network-impl-riot.o \
@@ -45,6 +50,7 @@ obj-networking-$(OIC) += \
     sol-oic-cbor.o \
     sol-oic-client.o \
     sol-oic-server.o \
+    sol-oic-security.o \
     $(TINYCBOR_SRC_PATH)/cborencoder.o \
     $(TINYCBOR_SRC_PATH)/cborerrorstrings.o \
     $(TINYCBOR_SRC_PATH)/cborparser.o \
