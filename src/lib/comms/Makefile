@@ -14,7 +14,8 @@ obj-networking-$(DTLS) += \
     $(TINYDTLS_SRC_PATH)/peer.o \
     $(TINYDTLS_SRC_PATH)/session.o \
     $(TINYDTLS_SRC_PATH)/aes/rijndael.o \
-    $(TINYDTLS_SRC_PATH)/sha2/sha2.o
+    $(TINYDTLS_SRC_PATH)/sha2/sha2.o \
+    sol-socket-dtls-impl-tinydtls.o
 
 obj-networking-$(DTLS)-extra-cflags += \
     -I$(TINYDTLS_SRC_PATH) \
