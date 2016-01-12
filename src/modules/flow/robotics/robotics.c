@@ -301,4 +301,57 @@ quadrature_encoder_open(struct sol_flow_node *node, void *data,
     return 0;
 }
 
+struct pid_controller_data {
+    struct {
+        double constant;
+        double value;
+    } p, i, d;
+    double desired;
+    double old_error;
+};
+
+static int
+pid_controller_process(struct sol_flow_node *node, void *data,
+    uint16_t port, uint16_t conn_id, const struct sol_flow_packet *packet)
+{
+    struct pid_controller_data *priv = data;
+    double value, error;
+    int r;
+
+    r = sol_flow_packet_get_drange_value(packet, &value);
+    SOL_INT_CHECK(r, < 0, r);
+
+    error = priv->desired - value;
+
+    priv->p.value = error * priv->p.constant;
+    priv->i.value = priv->i.value + (error * priv->i.constant);
+    priv->d.value = (error - priv->old_error) * priv->d.constant;
+    priv->old_error = error;
+
+    return sol_flow_send_drange_value_packet(node,
+        SOL_FLOW_NODE_TYPE_ROBOTICS_PID__OUT__OUT,
+        priv->p.value + priv->i.value + priv->d.value);
+}
+
+static int
+pid_controller_open(struct sol_flow_node *node, void *data,
+    const struct sol_flow_node_options *options)
+{
+    struct pid_controller_data *priv = data;
+    const struct sol_flow_node_type_robotics_pid_options *opts =
+        (const struct sol_flow_node_type_robotics_pid_options *)options;
+
+    priv->p.constant = opts->kp;
+    priv->i.constant = opts->ki;
+    priv->d.constant = opts->kd;
+    priv->desired = opts->desired;
+
+    priv->p.value = 0.0;
+    priv->i.value = 0.0;
+    priv->d.value = 0.0;
+    priv->old_error = 0.0;
+
+    return 0;
+}
+
 #include "robotics-gen.c"
